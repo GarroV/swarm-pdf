@@ -594,9 +594,16 @@ async function launchEditor(file: File) {
       appModule = (await import('../editcore/app.js')) as EditorAppModule;
       const { PdfEngine } =
         (await import('../editcore/core.js')) as unknown as {
-          PdfEngine: { fallbackFonts: Map<string, Uint8Array> };
+          PdfEngine: {
+            fallbackFonts: Map<string, Uint8Array>;
+            localFonts: Map<string, Uint8Array>;
+          };
         };
       setupFallbackFonts(appModule, PdfEngine.fallbackFonts);
+      // SWARM: запасные Liberation для букв, которых нет во встроенном шрифте (фоном).
+      void import('../editcore/swarm-font-substitute.js').then((m) =>
+        m.preloadMetricFonts(PdfEngine.localFonts, import.meta.env.BASE_URL)
+      );
       appModule.setOnSaved((kb) => {
         showAlert(
           t('common.success'),

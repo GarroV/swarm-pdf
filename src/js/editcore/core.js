@@ -20,6 +20,8 @@ export const OBJ = {
   FORM: 5,
 };
 
+import { substituteUncoveredRuns } from './swarm-font-substitute.js';
+
 const sfntCoverMemo = new WeakMap();
 
 export function sfntCovers(bytes, cps) {
@@ -798,7 +800,12 @@ export class PdfEngine {
     const json = M.UTF8ToString(ptr);
     M._ec_string_free(ptr);
     this._readPageTransform();
-    return JSON.parse(json).paragraphs;
+    const paragraphs = JSON.parse(json).paragraphs;
+    // SWARM: исходный текст кусков — для проверки подмены шрифта (swarm-font-substitute.js).
+    this._swarmSourceRuns = new Map(
+      (paragraphs || []).map((p) => [p.id, (p.runs || []).map((r) => r.text)])
+    );
+    return paragraphs;
   }
 
   _readPageTransform() {
@@ -893,7 +900,17 @@ export class PdfEngine {
     return JSON.parse(j);
   }
 
+  _swarmSubstitute(id, runs) {
+    return substituteUncoveredRuns(
+      runs,
+      (src) => this.runFontData(id, src),
+      (src) => this._swarmSourceRuns?.get(id)?.[src] ?? null,
+      PdfEngine.localFonts
+    );
+  }
+
   previewParagraph(id, runs, fmt) {
+    runs = this._swarmSubstitute(id, runs);
     const a = this._writeRuns(runs);
     const f = this._writeFmt(fmt);
     const ptr = this.M._ec_preview_paragraph(
@@ -918,6 +935,7 @@ export class PdfEngine {
 
   commitParagraph(id, runs, fmt) {
     this._pageDirty = true;
+    runs = this._swarmSubstitute(id, runs);
     const a = this._writeRuns(runs);
     const f = this._writeFmt(fmt);
     const out = this._decode(
