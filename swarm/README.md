@@ -41,3 +41,17 @@ python swarm/check/pdfcheck.py "<папка>/out/in (edited).pdf"
 
 Cloudflare Pages, проект `swarm-pdf`, сборка `SIMPLE_MODE=true npm run build`; папка
 `dist/libreoffice-wasm` не выкладывается (файлы > 25 МБ — лимит Pages; конвертация Office не работает).
+
+## Подборка шрифтов (03.10.2026)
+
+Список «Шрифт» показывает только то, что встроится: Arial/Times/Courier (под ними метрически
+совместимые Liberation), PT Sans/Serif, Roboto, Open Sans, Montserrat, Noto Sans/Serif
+(`public/fonts/`, OFL, статические начертания, подмножество латиница/кириллица/греческий) и системные,
+если их открыли («System fonts», ниже подборки). Названий без файла в списке нет — на кириллице они
+давали рамки вместо букв.
+
+- Каталог и загрузка — `src/js/editcore/swarm-font-catalog.js` (шрифт грузится в момент выбора).
+- `detachRestyledRuns` (`swarm-font-substitute.js`): кусок со сменённым семейством отвязывается от
+  исходного, иначе ядро молча оставляло встроенный шрифт документа.
+- Проверка: `node swarm/check/font-run.cjs <chrome> <dir> "PT Serif" 1` (BASE — адрес редактора),
+  затем `pdffonts` (должен быть `PTSerif`) и `pdfcheck.py`. Загрузка файла в headless идёт 15–40 с.

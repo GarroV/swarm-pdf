@@ -14,6 +14,7 @@ window.addEventListener('unhandledrejection', (e) => {
     ((e.reason && (e.reason.stack || e.reason.message)) || e.reason);
 });
 import { PdfEngine, OBJ } from './core.js';
+import { catalogFamilies, ensureCatalogFont } from './swarm-font-catalog.js';
 import { applyTagSurgery } from './tagsurgery.js';
 import { pageHasPatternFill, protectPatternArtwork } from './shadingsurgery.js';
 import {
@@ -9380,18 +9381,8 @@ function setOnSaved(fn) {
 }
 
 function wireUI() {
-  const fams = [
-    'Helvetica',
-    'Arial',
-    'Times New Roman',
-    'Georgia',
-    'Courier New',
-    'Verdana',
-    'Trebuchet MS',
-    'Tahoma',
-    'Garamond',
-    'Palatino',
-  ];
+  // SWARM: только шрифты, которые реально встроятся (см. swarm-font-catalog.js).
+  const fams = catalogFamilies();
   $('fFamily').append(
     ...fams.map((f) => {
       const o = document.createElement('option');
@@ -9653,6 +9644,11 @@ function wireUI() {
   $('fFamily').addEventListener('change', async (e) => {
     const fam = e.target.value;
     await ensureLocalFontBytes(fam);
+    await ensureCatalogFont(
+      fam,
+      PdfEngine.localFonts,
+      import.meta.env.BASE_URL
+    );
     styleTargetRuns((s) => {
       s.family = fam;
     });
@@ -10152,13 +10148,21 @@ async function loadSystemFonts(silent = false) {
     const sel = $('fFamily');
     const cur = sel.value;
     const fams = [...localFontMeta.keys()].sort();
-    sel.replaceChildren(
-      ...fams.map((f) => {
-        const o = document.createElement('option');
-        o.value = o.textContent = f;
-        return o;
-      })
+    // SWARM: системные дописываются после подборки, а не вместо неё.
+    const bundled = catalogFamilies();
+    const sys = document.createElement('optgroup');
+    sys.label = 'System';
+    sys.append(
+      ...fams
+        .filter((f) => !bundled.includes(f))
+        .map((f) => {
+          const o = document.createElement('option');
+          o.value = o.textContent = f;
+          return o;
+        })
     );
+    sel.querySelector('optgroup[label="System"]')?.remove();
+    sel.append(sys);
     setSelectValue(sel, cur);
     if (!silent) toast(fams.length + ' system font families available');
   } catch (err) {
