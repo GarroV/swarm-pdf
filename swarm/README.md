@@ -55,3 +55,11 @@ Cloudflare Pages, проект `swarm-pdf`, сборка `SIMPLE_MODE=true npm r
   исходного, иначе ядро молча оставляло встроенный шрифт документа.
 - Проверка: `node swarm/check/font-run.cjs <chrome> <dir> "PT Serif" 1` (BASE — адрес редактора),
   затем `pdffonts` (должен быть `PTSerif`) и `pdfcheck.py`. Загрузка файла в headless идёт 15–40 с.
+
+## Режим встраивания (03.10.2026)
+
+Swarm открывает редактор окном с iframe на `/edit-pdf-text?embed=1`. С этим параметром
+`src/js/logic/swarm-embed.ts` прячет обвязку сайта BentoPDF: верхнее меню, «Back to Tools»,
+хлебные крошки, подвал и заголовок. Без параметра страница не меняется. Заголовков,
+запрещающих встраивание (X-Frame-Options, frame-ancestors), у Pages-проекта нет; разрешение на
+стороне Swarm — `frame-src` в его `miniapp/scripts/gen-csp-headers.mjs`.
