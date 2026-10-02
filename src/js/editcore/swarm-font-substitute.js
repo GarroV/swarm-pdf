@@ -74,6 +74,25 @@ export function substituteUncoveredRuns(
   });
 }
 
+/**
+ * Куски, которым человек сменил семейство, отвязываются от исходного куска: иначе ядро
+ * переиспользует встроенный шрифт документа и выбор в списке молча не доезжает до файла.
+ * Отвязываем, только если байты нового шрифта уже у провайдера — без них ядро нарисует рамки.
+ * @param {(srcIndex: number) => {family?: string} | null} sourceOf исходный кусок (до правки)
+ */
+export function detachRestyledRuns(runs, sourceOf, localFonts) {
+  return runs.map((run, i) => {
+    const src = Number.isInteger(run.sourceIndex) ? run.sourceIndex : i;
+    if (src < 0) return run;
+    const before = sourceOf(src)?.family;
+    if (!before || !run.family || run.family === before) return run;
+    const hasBytes =
+      localFonts.get(`${run.family}|${styleKey(run)}`)?.length ||
+      localFonts.get(run.family)?.length;
+    return hasBytes ? { ...run, sourceIndex: -1 } : run;
+  });
+}
+
 const STYLE_FILES = {
   '00': 'Regular',
   10: 'Bold',

@@ -41,3 +41,15 @@ python swarm/check/pdfcheck.py "<папка>/out/in (edited).pdf"
 
 Cloudflare Pages, проект `swarm-pdf`, сборка `SIMPLE_MODE=true npm run build`; папка
 `dist/libreoffice-wasm` не выкладывается (файлы > 25 МБ — лимит Pages; конвертация Office не работает).
+
+## В работе: подборка шрифтов (ветка `swarm/font-catalog`, 03.10.2026)
+
+Список «Шрифт» показывает только то, что встроится: Arial/Times/Courier (под ними Liberation),
+PT Sans/Serif, Roboto, Open Sans, Montserrat, Noto Sans/Serif (`public/fonts/`, OFL) и системные,
+если их открыли. Код — `src/js/editcore/swarm-font-catalog.js`, отвязка смены семейства —
+`detachRestyledRuns` в `swarm-font-substitute.js`.
+
+Осталось: e2e `font-run` (абзац → выделить всё → PT Serif → сохранить) должен показать PTSerif
+в `pdffonts` и чистый `pdfcheck`. Первый прогон без `detachRestyledRuns` шрифт не встроил;
+прогон с ним не состоялся — превью перестало открывать редактор (`#toolbar` не появился даже
+на прежнем рабочем деплое, похоже на сбой окружения). Потом — мёрж в main и выкладка прода.

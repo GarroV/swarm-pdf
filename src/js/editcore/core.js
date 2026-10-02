@@ -20,7 +20,10 @@ export const OBJ = {
   FORM: 5,
 };
 
-import { substituteUncoveredRuns } from './swarm-font-substitute.js';
+import {
+  detachRestyledRuns,
+  substituteUncoveredRuns,
+} from './swarm-font-substitute.js';
 
 const sfntCoverMemo = new WeakMap();
 
@@ -803,7 +806,10 @@ export class PdfEngine {
     const paragraphs = JSON.parse(json).paragraphs;
     // SWARM: исходный текст кусков — для проверки подмены шрифта (swarm-font-substitute.js).
     this._swarmSourceRuns = new Map(
-      (paragraphs || []).map((p) => [p.id, (p.runs || []).map((r) => r.text)])
+      (paragraphs || []).map((p) => [
+        p.id,
+        (p.runs || []).map((r) => ({ text: r.text, family: r.family })),
+      ])
     );
     return paragraphs;
   }
@@ -901,10 +907,11 @@ export class PdfEngine {
   }
 
   _swarmSubstitute(id, runs) {
+    const source = (src) => this._swarmSourceRuns?.get(id)?.[src] ?? null;
     return substituteUncoveredRuns(
-      runs,
+      detachRestyledRuns(runs, source, PdfEngine.localFonts),
       (src) => this.runFontData(id, src),
-      (src) => this._swarmSourceRuns?.get(id)?.[src] ?? null,
+      (src) => source(src)?.text ?? null,
       PdfEngine.localFonts
     );
   }
