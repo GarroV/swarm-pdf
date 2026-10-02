@@ -73,3 +73,44 @@ export function substituteUncoveredRuns(
     return { ...run, family: target, sourceIndex: -1 };
   });
 }
+
+const STYLE_FILES = {
+  '00': 'Regular',
+  10: 'Bold',
+  '01': 'Italic',
+  11: 'BoldItalic',
+};
+
+/**
+ * Загрузить запасные Liberation в провайдер шрифтов ядра (`PdfEngine.localFonts`).
+ * Фоном при открытии редактора: провайдер синхронный, поэтому шрифты должны лежать заранее.
+ * Не загрузились — подмена просто не сработает (как было до починки), правка не ломается.
+ */
+export async function preloadMetricFonts(localFonts, baseUrl) {
+  const base = String(baseUrl || '/').replace(/\/?$/, '/');
+  const jobs = [];
+  for (const family of Object.values(METRIC_FAMILIES)) {
+    const file = family.replace(' ', '');
+    for (const [key, style] of Object.entries(STYLE_FILES)) {
+      const k = `${family}|${key}`;
+      if (localFonts.get(k)?.length) continue;
+      jobs.push(
+        fetch(`${base}fonts/liberation/${file}-${style}.ttf`)
+          .then((r) =>
+            r.ok
+              ? r.arrayBuffer()
+              : Promise.reject(new Error(`HTTP ${r.status}`))
+          )
+          .then((buf) => localFonts.set(k, new Uint8Array(buf)))
+          .catch((e) =>
+            console.warn(
+              '[swarm] запасной шрифт не загрузился:',
+              k,
+              e?.message ?? e
+            )
+          )
+      );
+    }
+  }
+  await Promise.all(jobs);
+}
