@@ -5993,6 +5993,19 @@ function runsDiffer(a, b) {
   return false;
 }
 
+// SWARM: сохранить абзац и сдвинуть нижележащие, если он вырос/сжался. Раньше сдвиг был только
+// у правки кликом (endEdit) и смены формата; «Заменить», «Заменить всё» и исправление опечатки
+// сохраняли абзац без сдвига — удлинённый абзац наезжал на следующий.
+function commitWithCascade(para, runs) {
+  const fresh = state.paragraphs.find((q) => q.id === para.id) || para;
+  const prevBottom = fresh.box ? fresh.box.top - fresh.box.h : -1e30;
+  const u = P().commitParagraph(fresh.id, runs, fresh.format);
+  if (!u) return null;
+  replaceParagraph(fresh.id, u);
+  cascadeParagraphGrowth(u, prevBottom);
+  return u;
+}
+
 function cascadeParagraphGrowth(updated, prevBottom) {
   if (!updated?.box || !(prevBottom > -1e29)) return;
   const newBottom = updated.box.top - updated.box.h;
@@ -8176,11 +8189,7 @@ function replaceAllScan(needle, replacement) {
       const spans = paraMatches(para, needle, opts);
       if (!spans.length) continue;
       const runs = runsWithReplacements(para, spans, replacement);
-      const u = P().commitParagraph(para.id, runs, para.format);
-      if (u) {
-        replaceParagraph(para.id, u);
-        total += spans.length;
-      }
+      if (commitWithCascade(para, runs)) total += spans.length;
     }
   }
   state.find = null;
@@ -8200,9 +8209,7 @@ function replaceCurrent(needle, replacement) {
   if (!para) return 0;
   snapshotEdit('edit text', para);
   const runs = runsWithReplacements(para, [hit], replacement);
-  const u = P().commitParagraph(para.id, runs, para.format);
-  if (!u) return 0;
-  replaceParagraph(para.id, u);
+  if (!commitWithCascade(para, runs)) return 0;
   state.find.i -= 1;
   state.dirty = true;
   refreshAfterMutation();
@@ -8586,12 +8593,10 @@ function spellChange() {
     at = end;
   }
   snapshotEdit('spelling', para);
-  const u = P().commitParagraph(
-    para.id,
-    runs.filter((r) => r.text.length),
-    para.format
+  commitWithCascade(
+    para,
+    runs.filter((r) => r.text.length)
   );
-  if (u) replaceParagraph(para.id, u);
   refreshAfterMutation();
   spellRescan();
   spellNext();

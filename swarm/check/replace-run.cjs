@@ -13,13 +13,17 @@ const [, , chrome, dir, find, repl] = process.argv;
     downloadPath: dir + '/out',
   });
   p.on('pageerror', (e) => console.log('pageerror', e.message.slice(0, 150)));
-  await p.goto('http://127.0.0.1:3091/edit-pdf-text', {
-    waitUntil: 'networkidle0',
-  });
+  await p.goto(
+    (process.env.BASE || 'http://127.0.0.1:3091') + '/edit-pdf-text',
+    { waitUntil: 'networkidle0' }
+  );
   const input = (await p.$('#file-input')) || (await p.$('#file'));
   await input.uploadFile(dir + '/in.pdf');
   await p.waitForSelector('#toolbar', { visible: true, timeout: 30000 });
-  await new Promise((r) => setTimeout(r, 4000));
+  await p
+    .waitForNetworkIdle({ idleTime: 1500, timeout: 60000 })
+    .catch(() => {});
+  await new Promise((r) => setTimeout(r, 2000));
   await p.click('#find');
   await p.waitForSelector('#findText', { visible: true });
   await p.type('#findText', find);
