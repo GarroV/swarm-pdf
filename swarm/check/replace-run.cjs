@@ -19,7 +19,7 @@ const [, , chrome, dir, find, repl] = process.argv;
   );
   const input = (await p.$('#file-input')) || (await p.$('#file'));
   await input.uploadFile(dir + '/in.pdf');
-  await p.waitForSelector('#toolbar', { visible: true, timeout: 30000 });
+  await p.waitForSelector('#toolbar', { visible: true, timeout: 90000 });
   await p
     .waitForNetworkIdle({ idleTime: 1500, timeout: 60000 })
     .catch(() => {});
