@@ -415,6 +415,7 @@ function closeEditor() {
   document.getElementById('tool-landing')?.classList.remove('hidden');
 }
 let launching = false;
+let metricFontsReady: Promise<unknown> = Promise.resolve();
 
 function fitMobileWidth() {
   const mod = appModule;
@@ -601,9 +602,12 @@ async function launchEditor(file: File) {
           };
         };
       setupFallbackFonts(appModule, PdfEngine.fallbackFonts);
-      // SWARM: запасные Liberation для букв, которых нет во встроенном шрифте (фоном).
-      void import('../editcore/swarm-font-substitute.js').then((m) =>
-        m.preloadMetricFonts(PdfEngine.localFonts, import.meta.env.BASE_URL)
+      // SWARM: запасные Liberation для букв, которых нет во встроенном шрифте. Файл открываем
+      // только после них: правка до загрузки записывала в абзац рамку вместо буквы
+      // (владелец 03.10: замена сразу после открытия → «с□едения» в заголовке).
+      metricFontsReady = import('../editcore/swarm-font-substitute.js').then(
+        (m) =>
+          m.preloadMetricFonts(PdfEngine.localFonts, import.meta.env.BASE_URL)
       );
       appModule.setOnSaved((kb) => {
         showAlert(
@@ -625,6 +629,7 @@ async function launchEditor(file: File) {
     if (!engineOk) {
       throw new Error('WASM engine failed to initialize');
     }
+    await metricFontsReady;
     await appModule.openFile(decrypted[0]);
     if (window.matchMedia('(max-width: 768px)').matches) fitMobileWidth();
   } catch (error) {
