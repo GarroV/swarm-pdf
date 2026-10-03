@@ -39,8 +39,21 @@ python swarm/check/pdfcheck.py "<папка>/out/in (edited).pdf"
 
 ## Выкладка
 
-Cloudflare Pages, проект `swarm-pdf`, сборка `SIMPLE_MODE=true npm run build`; папка
-`dist/libreoffice-wasm` не выкладывается (файлы > 25 МБ — лимит Pages; конвертация Office не работает).
+Cloudflare Pages, проект `swarm-pdf`. Сборка одной командой — `swarm/build.sh`, выкладка —
+`npx wrangler pages deploy ../dist-deploy --project-name swarm-pdf --branch main` (другая
+`--branch` даёт превью `<ветка>.swarm-pdf.pages.dev`, прод не трогает).
+
+`swarm/build.sh`:
+
+- скачивает из npm движки инструментов — cpdf (склейка, часть разрезания), Ghostscript и PyMuPDF
+  (сжатие, картинки → PDF, PDF → Word) — тех версий, что записаны в
+  `src/js/utils/wasm-provider.ts`, в `public/wasm/` (в git не лежат, ~80 МБ);
+- собирает с `SIMPLE_MODE=true` и `VITE_WASM_*_URL=/wasm/...`: без этого BentoPDF грузит движки с
+  `cdn.jsdelivr.net`, то есть чужой код получает доступ к файлу в браузере. Проверено записью
+  запросов 03.10.2026: склейка на прежней сборке тянула `cdn.jsdelivr.net`, на новой — только наш адрес;
+- откатывает файлы, которые сборка правит сама (блог, `security-headers-docs.conf`, `src/partials`);
+- готовит `../dist-deploy` без `libreoffice-wasm` (файлы > 25 МБ — лимит Pages; конвертация Office
+  не работает). Файлы движков больше 25 МБ скрипт ловит до сборки.
 
 ## Подборка шрифтов (03.10.2026)
 
@@ -58,7 +71,7 @@ Cloudflare Pages, проект `swarm-pdf`, сборка `SIMPLE_MODE=true npm r
 
 ## Режим встраивания (03.10.2026)
 
-Swarm открывает редактор окном с iframe на `/edit-pdf-text?embed=1`. С этим параметром
+Swarm открывает инструменты панелью «PDF» с iframe на `/<инструмент>?embed=1` (править текст, склейка, разрезание, сжатие, страницы, поворот, подпись, картинки → PDF, PDF → PNG, PDF → Word — у каждой страницы первой строкой `import './swarm-embed'`). С этим параметром
 `src/js/logic/swarm-embed.ts` прячет обвязку сайта BentoPDF: верхнее меню, «Back to Tools»,
 хлебные крошки, подвал и заголовок. Без параметра страница не меняется. Заголовков,
 запрещающих встраивание (X-Frame-Options, frame-ancestors), у Pages-проекта нет; разрешение на

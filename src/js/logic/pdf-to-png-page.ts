@@ -1,3 +1,4 @@
+import './swarm-embed';
 import { showLoader, hideLoader, showAlert } from '../ui.js';
 import {
   downloadFile,
