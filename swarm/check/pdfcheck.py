@@ -1,5 +1,13 @@
 """Проверка PDF после правки текста: (1) буквы без рисунка во встроенном шрифте (пустой квадрат),
-(2) наложение строк разных абзацев. Код возврата 1 — найдены поломки."""
+(2) наложение строк разных абзацев, (3) с `--orig исходник.pdf [--replace было=стало ...]` —
+порядок слов против исходника: абзац, разорванный или переставленный правкой, даёт расхождение,
+даже если строки не пересеклись. Перенос строк сравнению не мешает: сравниваются слова подряд.
+Код возврата 1 — найдены поломки.
+
+  pdfcheck.py out.pdf
+  pdfcheck.py out.pdf --orig in.pdf --replace данни=сведения"""
+import difflib
+import argparse
 import io
 import re
 import subprocess
@@ -148,9 +156,41 @@ def overlapping_lines(path):
     return problems
 
 
+def page_words(path):
+    """Слова каждой страницы в порядке чтения (pdftotext раскладывает сверху вниз)."""
+    out = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True, text=True).stdout
+    return [p.split() for p in out.split("\f")]
+
+
+def order_vs_original(path, orig, replacements):
+    problems = []
+    edited = page_words(path)
+    for pno, src in enumerate(page_words(orig), 1):
+        text = " ".join(src)
+        for old, new in replacements:
+            text = text.replace(old, new)
+        want = text.split()
+        got = edited[pno - 1] if pno <= len(edited) else []
+        sm = difflib.SequenceMatcher(a=want, b=got, autojunk=False)
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag == "equal":
+                continue
+            was = " ".join(want[i1:i2])[:50] or "—"
+            now = " ".join(got[j1:j2])[:50] or "—"
+            problems.append(f"стр.{pno}: порядок слов разошёлся с исходником: «{was}» → «{now}»")
+    return problems
+
+
 if __name__ == "__main__":
-    path = sys.argv[1]
-    probs = missing_glyphs(path) + overlapping_lines(path)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("path")
+    ap.add_argument("--orig")
+    ap.add_argument("--replace", action="append", default=[], help="было=стало, как в правке")
+    args = ap.parse_args()
+    probs = missing_glyphs(args.path) + overlapping_lines(args.path)
+    if args.orig:
+        pairs = [r.split("=", 1) for r in args.replace]
+        probs += order_vs_original(args.path, args.orig, pairs)
     for p in probs:
         print("✘", p)
     print("✔ поломок не найдено" if not probs else f"итого поломок: {len(probs)}")
