@@ -3831,7 +3831,7 @@ function openEditor(spec, caret) {
       padding: pad + 'px',
     });
     ed.style.lineHeight = 1.25;
-    ed.appendChild(
+    const seed = ed.appendChild(
       runSpan(
         {
           text: '',
@@ -3847,6 +3847,12 @@ function openEditor(spec, caret) {
         -1
       )
     );
+    // SWARM: первые буквы браузер вставляет рядом с пустым span, а не в него, и они наследуют
+    // шрифт самого поля (13px из оформления страницы). Владелец видел это как «текст лёг мелко»:
+    // набирал крупно, после сохранения текст становился настоящего размера (14pt × масштаб).
+    // Поле получает тот же шрифт и размер, что затравка, — набранное выглядит как сохранённое.
+    ed.style.fontSize = seed.style.fontSize;
+    ed.style.fontFamily = seed.style.fontFamily;
   }
   ed.style.whiteSpace =
     singleLine || ed.dataset.locked === '1' ? 'pre' : 'pre-wrap';
@@ -6744,6 +6750,120 @@ function selectParagraph(p) {
   updateChrome();
 }
 
+// SWARM: список элементов страницы (swarm-pdf#3). Владелец 03.10: «надо добавить некий лист
+// элементов, чтобы можно было между ними переключаться» — добавленное поле терялось, выделить
+// его заново было нечем. Панель слева: текстовые блоки и картинки страницы сверху вниз; щелчок
+// выделяет, прокручивает к элементу и открывает правку текста, крестик удаляет тем же путём, что
+// клавиша Delete (кнопка #del). Пересобирается из updateChrome, то есть после каждой правки,
+// смены выделения и страницы.
+const ELEMENT_LABEL_MAX = 60;
+const OBJ_IMAGE = 3; // типы объектов движка: 1 текст, 2 фигура, 3 картинка (см. подписи в updateChrome)
+
+function elementItems() {
+  const H = P().pageHeight;
+  const items = state.paragraphs
+    .filter((para) => para.editable !== false)
+    .map((para) => {
+      const r = paraEnvelope(para);
+      return { kind: 'para', para, rect: r, top: H - (r.y + r.h) };
+    });
+  for (let i = 0; i < P().objectCount(); i++) {
+    const o = P().objectAt(i);
+    if (!o || o.type !== OBJ_IMAGE) continue;
+    const b = P().objectBounds(o.handle);
+    if (!b) continue;
+    items.push({ kind: 'image', o, rect: b, top: H - (b.y + b.h) });
+  }
+  return items.sort((a, b) => a.top - b.top || a.rect.x - b.rect.x);
+}
+
+function isSelectedItem(it) {
+  const s = state.selection;
+  if (!s) return false;
+  if (it.kind === 'para') return s.kind === 'para' && s.para.id === it.para.id;
+  return s.kind === 'object' && s.handle === it.o.handle;
+}
+
+function revealRect(r) {
+  const z = state.zoom;
+  const el = document.createElement('div');
+  Object.assign(el.style, {
+    position: 'absolute',
+    pointerEvents: 'none',
+    left: r.x * z + 'px',
+    top: (P().pageHeight - (r.y + r.h)) * z + 'px',
+    width: Math.max(1, r.w * z) + 'px',
+    height: Math.max(1, r.h * z) + 'px',
+  });
+  $('overlay').appendChild(el);
+  el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+  setTimeout(() => el.remove(), 1000);
+}
+
+function pickElement(it) {
+  if (state.editing) endEdit(true);
+  if (it.kind === 'para') {
+    selectParagraph(it.para);
+    revealRect(it.rect);
+    beginEdit(it.para);
+  } else {
+    selectObject({ handle: it.o.handle, type: it.o.type, bounds: it.rect });
+    revealRect(it.rect);
+  }
+}
+
+function renderElements() {
+  const bar = $('elementsbar');
+  if (!bar || bar.hidden || !state.engine) return;
+  const list = $('elementsList');
+  list.replaceChildren();
+  const items = elementItems();
+  $('elementsCount').textContent = items.length ? String(items.length) : '';
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'elempty';
+    empty.textContent = 'No text or images on this page';
+    list.appendChild(empty);
+    return;
+  }
+  for (const it of items) {
+    const row = document.createElement('div');
+    row.className = 'elrow' + (isSelectedItem(it) ? ' active' : '');
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'elpick';
+    const icon = document.createElement('i');
+    icon.className = it.kind === 'para' ? 'ph ph-text-t' : 'ph ph-image';
+    const label = document.createElement('span');
+    const text =
+      it.kind === 'para' ? paraText(it.para).replace(/\s+/g, ' ').trim() : '';
+    label.textContent =
+      it.kind === 'image'
+        ? 'Image'
+        : text
+          ? text.slice(0, ELEMENT_LABEL_MAX) +
+            (text.length > ELEMENT_LABEL_MAX ? '…' : '')
+          : 'Empty text box';
+    if (it.kind === 'para' && !text) label.className = 'elmuted';
+    pick.append(icon, label);
+    pick.addEventListener('click', () => pickElement(it));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn icon eldel';
+    del.title = 'Delete';
+    del.innerHTML = '<i class="ph ph-trash"></i>';
+    del.addEventListener('click', () => {
+      if (state.editing) endEdit(true);
+      if (it.kind === 'para') selectParagraph(it.para);
+      else
+        selectObject({ handle: it.o.handle, type: it.o.type, bounds: it.rect });
+      $('del').click();
+    });
+    row.append(pick, del);
+    list.appendChild(row);
+  }
+}
+
 const sameItem = (a, b) =>
   a.t === b.t &&
   (a.t === 'para' ? a.para.id === b.para.id : a.handle === b.handle);
@@ -7501,13 +7621,11 @@ function stagePointHandlers() {
   canvas.addEventListener('mousedown', (e) => {
     if (state.editing) return;
     const { px, py } = toPage(e);
-    // SWARM: щелчок по существующему полю или картинке при включённом «T» выделяет и тащит
-    // его, а не начинает новое поле (владелец 03.10: «заново выделить не могу», «перетаскивать
-    // тоже не получается»).
-    if (
-      state.tool === 'addText' &&
-      (hitTestParagraphStrong(px, py) || hitTestObject(px, py))
-    )
+    // SWARM: щелчок по существующему текстовому полю при включённом «T» выделяет и тащит его,
+    // а не начинает новое поле (владелец 03.10: «заново выделить не могу», «перетаскивать тоже
+    // не получается»). Только текст: на скане вся страница — одна картинка, и перехват по
+    // картинкам делал «T» бесполезным — протяжка тащила сам скан вместо нового поля.
+    if (state.tool === 'addText' && hitTestParagraphStrong(px, py))
       leaveAddTextMode();
     if (state.tool === 'addText') {
       drag = {
@@ -9152,6 +9270,7 @@ function drawRulers() {
 }
 
 function updateChrome() {
+  renderElements();
   const eng = P();
   const has = eng && eng.doc;
   $('save').disabled = !has;
@@ -9980,8 +10099,19 @@ function wireUI() {
     })
   );
 
+  // SWARM: список элементов (#3) — слева на месте панели поиска, открыта одна из двух.
+  $('elements').addEventListener('click', () => {
+    $('elementsbar').hidden = !$('elementsbar').hidden;
+    if (!$('elementsbar').hidden) $('findbar').hidden = true;
+    renderElements();
+  });
+  $('elementsDone').addEventListener(
+    'click',
+    () => ($('elementsbar').hidden = true)
+  );
   $('find').addEventListener('click', () => {
     $('findbar').hidden = !$('findbar').hidden;
+    if (!$('findbar').hidden) $('elementsbar').hidden = true;
     if (!$('findbar').hidden) $('findText').focus();
   });
   $('findDone').addEventListener('click', () => ($('findbar').hidden = true));

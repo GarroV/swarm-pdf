@@ -597,6 +597,9 @@
         </div>
         <span id="info" class="info"></span>
         <div class="tgroup toolright">
+          <button id="elements" class="btn icon" title="Elements on this page">
+            <i class="ph ph-list-bullets"></i>
+          </button>
           <button
             id="find"
             class="btn icon"
@@ -689,6 +692,18 @@
       </div>
 
       <div id="main">
+        <div id="elementsbar" hidden>
+          <div class="findhead">
+            <span class="findtitle"
+              ><i class="ph ph-list-bullets barlead"></i> Elements
+              <span id="elementsCount" class="elcount"></span
+            ></span>
+            <button id="elementsDone" class="btn icon" title="Close">
+              <i class="ph ph-x"></i>
+            </button>
+          </div>
+          <div id="elementsList"></div>
+        </div>
         <div id="findbar" hidden>
           <div class="findhead">
             <span class="findtitle"

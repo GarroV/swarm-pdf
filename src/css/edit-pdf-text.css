@@ -2361,3 +2361,89 @@
     z-index: 55;
   }
 }
+
+/* SWARM: список элементов страницы (swarm-pdf#3) — колонка слева, как панель поиска. */
+#text-editor-app #elementsbar[hidden] {
+  display: none;
+}
+#text-editor-app #elementsbar {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--ecpanel);
+  border-right: 1px solid var(--ecline);
+  overflow-y: auto;
+}
+#text-editor-app #elementsList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#text-editor-app .elrow {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+#text-editor-app .elrow:hover {
+  background: var(--ecpanel2);
+}
+#text-editor-app .elrow.active {
+  background: var(--ecpanel2);
+  box-shadow: inset 0 0 0 1px var(--ecaccent);
+}
+#text-editor-app .elpick {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: none;
+  border: 0;
+  color: var(--ectext);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+#text-editor-app .elpick span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#text-editor-app .elpick i,
+#text-editor-app .elmuted,
+#text-editor-app .elempty,
+#text-editor-app .elcount {
+  color: var(--ecmuted);
+}
+#text-editor-app .elempty {
+  font-size: 13px;
+  margin: 0;
+}
+#text-editor-app .eldel {
+  opacity: 0;
+}
+#text-editor-app .elrow:hover .eldel,
+#text-editor-app .elrow.active .eldel,
+#text-editor-app .eldel:focus-visible {
+  opacity: 1;
+}
+@media (max-width: 768px) {
+  #text-editor-app #main {
+    position: relative;
+  }
+  #text-editor-app #elementsbar {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(300px, 85vw);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+  #text-editor-app .eldel {
+    opacity: 1;
+  }
+}
