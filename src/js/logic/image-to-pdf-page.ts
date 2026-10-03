@@ -1,3 +1,4 @@
+import './swarm-embed';
 import { createIcons, icons } from 'lucide';
 import { showAlert, showLoader, hideLoader } from '@/js/ui.js';
 import { downloadFile, formatBytes } from '@/js/utils/helpers.js';
