@@ -5842,8 +5842,13 @@ function endEdit(commit) {
         if (window.__sanctityProbe)
           (window.__sanctityWhy ||= []).push(runsDiffer.why);
         snapshotEdit('edit text', e.para);
-        const updated = commitWithCascade(e.para, runs, e.para.format);
+        const prevBottomEdit = e.para.box
+          ? e.para.box.top - e.para.box.h
+          : -1e30;
+        const updated = P().commitParagraph(e.para.id, runs, e.para.format);
         if (updated) {
+          replaceParagraph(e.para.id, updated);
+          cascadeParagraphGrowth(updated, prevBottomEdit);
           state.selection = { kind: 'para', para: updated };
           state.dirty = true;
           if (!e.para.sharesObjects && !e.para.unwrapsForms) {
@@ -6028,11 +6033,21 @@ function rereadParagraphs() {
   state.paragraphs = P().buildModel();
 }
 
-function commitWithCascade(para, runs, format) {
+// makeRoom — только для «Заменить всё»: там правка идёт одним шагом истории. Перечитывать
+// модель внутри открытого шага (ручная правка, одиночная замена) нельзя — под абзацем
+// остаётся призрак его старой строки (проверено 03.10), поэтому там прежний порядок.
+function commitWithCascade(para, runs, format, makeRoom = false) {
   const fresh = findParaLike(para) || para;
   const fmt = format || fresh.format;
   const prevBottom = fresh.box ? fresh.box.top - fresh.box.h : -1e30;
   let madeBottom = prevBottom;
+  if (!makeRoom) {
+    const u = P().commitParagraph(fresh.id, runs, fmt);
+    if (!u) return null;
+    replaceParagraph(fresh.id, u);
+    cascadeParagraphGrowth(u, prevBottom);
+    return u;
+  }
   if (prevBottom > -1e29) {
     let pv = null;
     try {
@@ -8288,7 +8303,7 @@ function replaceAllScan(needle, replacement) {
       if (!para) break;
       const spans = paraMatches(para, needle, opts);
       const runs = runsWithReplacements(para, spans, replacement);
-      const u = commitWithCascade(para, runs);
+      const u = commitWithCascade(para, runs, undefined, true);
       if (u) total += spans.length;
       below = u?.box?.top ?? para.box.top;
     }
