@@ -5484,6 +5484,8 @@ function beginEdit(para, caret) {
 }
 function beginNewTextBox(x, yTop, size, caret, width) {
   const w = Number.isFinite(width) && width >= 30 ? width : 300;
+  // SWARM: одно поле на одно нажатие «T» — дальше щелчки выделяют и тащат, а не плодят поля.
+  leaveAddTextMode();
   openEditor({ newGeom: { x, yTop, width: w, size } }, caret);
 }
 
@@ -7499,6 +7501,14 @@ function stagePointHandlers() {
   canvas.addEventListener('mousedown', (e) => {
     if (state.editing) return;
     const { px, py } = toPage(e);
+    // SWARM: щелчок по существующему полю или картинке при включённом «T» выделяет и тащит
+    // его, а не начинает новое поле (владелец 03.10: «заново выделить не могу», «перетаскивать
+    // тоже не получается»).
+    if (
+      state.tool === 'addText' &&
+      (hitTestParagraphStrong(px, py) || hitTestObject(px, py))
+    )
+      leaveAddTextMode();
     if (state.tool === 'addText') {
       drag = {
         mode: 'newbox',
@@ -9280,6 +9290,14 @@ function setSelectValue(sel, val) {
     sel.insertBefore(o, sel.firstChild);
   }
   sel.value = val;
+}
+
+// SWARM: выйти из режима «новое поле» без закрытия правки (setTool закрывает её через endEdit).
+function leaveAddTextMode() {
+  if (state.tool !== 'addText') return;
+  state.tool = 'edit';
+  for (const b of document.querySelectorAll('[data-tool]'))
+    b.classList.toggle('on', b.dataset.tool === 'edit');
 }
 
 function setTool(tool) {
