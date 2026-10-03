@@ -19,7 +19,14 @@ const [, , chrome, dir, find, repl] = process.argv;
   );
   const input = (await p.$('#file-input')) || (await p.$('#file'));
   await input.uploadFile(dir + '/in.pdf');
-  await p.waitForSelector('#toolbar', { visible: true, timeout: 90000 });
+  // Опрос страницы в первые секунды открытия файла вешает CDP-вызов (headless): ждём молча.
+  await new Promise((r) => setTimeout(r, 20000));
+  for (let i = 0; ; i++) {
+    if (await p.$eval('#toolbar', (e) => !!e.offsetParent).catch(() => false))
+      break;
+    if (i > 180) throw new Error('editor did not open');
+    await new Promise((r) => setTimeout(r, 500));
+  }
   await p
     .waitForNetworkIdle({ idleTime: 1500, timeout: 60000 })
     .catch(() => {});
