@@ -221,6 +221,7 @@ const engineReady = new Promise((resolve) => {
   }
   if (params.get('e2e') && demo) runE2E();
   if (params.get('undotrace')) window.__undoTrace = true;
+  if (params.get('swarmtrace')) window.__swarmTrace = true;
   if (params.get('repro') && demo) setTimeout(runRepro, 300);
   const eo = params.get('editopen');
   const typein = params.get('typein');
@@ -5841,13 +5842,8 @@ function endEdit(commit) {
         if (window.__sanctityProbe)
           (window.__sanctityWhy ||= []).push(runsDiffer.why);
         snapshotEdit('edit text', e.para);
-        const prevBottomEdit = e.para.box
-          ? e.para.box.top - e.para.box.h
-          : -1e30;
-        const updated = P().commitParagraph(e.para.id, runs, e.para.format);
+        const updated = commitWithCascade(e.para, runs, e.para.format);
         if (updated) {
-          replaceParagraph(e.para.id, updated);
-          cascadeParagraphGrowth(updated, prevBottomEdit);
           state.selection = { kind: 'para', para: updated };
           state.dirty = true;
           if (!e.para.sharesObjects && !e.para.unwrapsForms) {
@@ -5997,30 +5993,115 @@ function runsDiffer(a, b) {
 // SWARM: сохранить абзац и сдвинуть нижележащие, если он вырос/сжался. Раньше сдвиг был только
 // у правки кликом (endEdit) и смены формата; «Заменить», «Заменить всё» и исправление опечатки
 // сохраняли абзац без сдвига — удлинённый абзац наезжал на следующий.
-function commitWithCascade(para, runs) {
-  const fresh = state.paragraphs.find((q) => q.id === para.id) || para;
+// SWARM: правка с перевёрсткой нижнего текста. Место под выросший абзац освобождается ДО
+// сохранения: иначе его новая последняя строка встаёт вплотную к следующему абзацу, ядро при
+// сохранении склеивает их в один, и сдвигать потом уже нечего — абзацы наезжают (файл владельца
+// 03.10: «Екипът» +1 строка съел «Моля»). Рост берём из предпросмотра, остаток правим после.
+// Абзац в свежей модели страницы: по id, а если модель перечитана (id другие) — по месту.
+function findParaLike(para) {
+  const byId = state.paragraphs.find(
+    (q) =>
+      q.id === para.id &&
+      q.box &&
+      para.box &&
+      Math.abs(q.box.x - para.box.x) < 1 &&
+      Math.abs(q.box.top - para.box.top) < 1
+  );
+  if (byId) return byId;
+  let best = null;
+  let bestD = 3;
+  for (const q of state.paragraphs) {
+    if (!q.box || !para.box || !q.editable) continue;
+    const d =
+      Math.abs(q.box.top - para.box.top) + Math.abs(q.box.x - para.box.x);
+    if (d < bestD) {
+      best = q;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+// Перечитать модель страницы из ядра: после сохранения абзаца и сдвигов номера и строки
+// абзацев в старой модели расходятся с ядром, и следующий сдвиг или правка ломают текст.
+function rereadParagraphs() {
+  state.paragraphs = P().buildModel();
+}
+
+function commitWithCascade(para, runs, format) {
+  const fresh = findParaLike(para) || para;
+  const fmt = format || fresh.format;
   const prevBottom = fresh.box ? fresh.box.top - fresh.box.h : -1e30;
-  const u = P().commitParagraph(fresh.id, runs, fresh.format);
+  let madeBottom = prevBottom;
+  if (prevBottom > -1e29) {
+    let pv = null;
+    try {
+      pv = P().previewParagraph(fresh.id, runs, fmt);
+    } catch {
+      pv = null;
+    }
+    if (pv && pv.height > 0) {
+      const predicted = pv.top - pv.height;
+      if (prevBottom - predicted > 0.5) {
+        shiftParagraphsBelow(fresh, prevBottom, prevBottom - predicted);
+        madeBottom = predicted;
+      }
+    }
+  }
+  let target = fresh;
+  if (madeBottom !== prevBottom) {
+    rereadParagraphs();
+    target = findParaLike(fresh);
+    if (!target) return null;
+  }
+  const u = P().commitParagraph(target.id, runs, fmt);
   if (!u) return null;
-  replaceParagraph(fresh.id, u);
-  cascadeParagraphGrowth(u, prevBottom);
+  if (window.__swarmTrace)
+    console.log(
+      '[swarm-trace] commit',
+      fresh.id,
+      'bottom',
+      prevBottom.toFixed(1),
+      'made',
+      madeBottom.toFixed(1),
+      'actual',
+      u.box ? (u.box.top - u.box.h).toFixed(1) : '?'
+    );
+  replaceParagraph(target.id, u);
+  const residual =
+    u.box && madeBottom > -1e29 ? madeBottom - (u.box.top - u.box.h) : 0;
+  if (Math.abs(residual) > 0.5) {
+    rereadParagraphs();
+    const ref = findParaLike(u) || u;
+    shiftParagraphsBelow(ref, prevBottom, residual);
+    rereadParagraphs();
+    return findParaLike(u) || u;
+  }
   return u;
 }
 
 function cascadeParagraphGrowth(updated, prevBottom) {
   if (!updated?.box || !(prevBottom > -1e29)) return;
-  const newBottom = updated.box.top - updated.box.h;
-  const delta = prevBottom - newBottom;
-  if (!(Math.abs(delta) > 0.5)) return;
-  const L = updated.box.x;
-  const R = updated.box.x + updated.box.w;
+  shiftParagraphsBelow(
+    updated,
+    prevBottom,
+    prevBottom - (updated.box.top - updated.box.h)
+  );
+}
+
+// Сдвинуть вниз на delta (pt; отрицательное — вверх) абзацы под `ref`, начинавшиеся ниже
+// `belowY` и перекрывающиеся с ним по горизонтали.
+function shiftParagraphsBelow(ref, belowY, delta) {
+  if (!ref?.box || !(Math.abs(delta) > 0.5)) return;
+  const L = ref.box.x;
+  const R = ref.box.x + ref.box.w;
   const span = Math.max(1, R - L);
   const movers = [];
   for (const q of state.paragraphs) {
-    if (!q || q.id === updated.id || !q.box) continue;
+    if (!q || q.id === ref.id || !q.box) continue;
     if (!q.editable || q.vertical || q.invisible) continue;
-    if (Math.abs((q.rotation || 0) - (updated.rotation || 0)) > 0.01) continue;
-    if (q.box.top > prevBottom + 0.5) continue;
+    if (Math.abs((q.rotation || 0) - (ref.rotation || 0)) > 0.01) continue;
+    if (q.box.top > belowY + 0.5) continue;
     const l = q.box.x;
     const r = q.box.x + q.box.w;
     const overlap = Math.min(R, r) - Math.max(L, l);
@@ -6028,12 +6109,22 @@ function cascadeParagraphGrowth(updated, prevBottom) {
     movers.push(q);
   }
   for (const q of movers) {
+    if (window.__swarmTrace)
+      console.log(
+        '[swarm-trace] move',
+        q.id,
+        'top',
+        q.box.top.toFixed(1),
+        'by',
+        (-delta).toFixed(1)
+      );
     if (P().moveParagraph(q.id, 0, -delta)) {
-      const moved = {
+      replaceParagraph(q.id, {
         ...q,
         box: { ...q.box, top: q.box.top - delta },
-      };
-      replaceParagraph(q.id, moved);
+      });
+    } else if (window.__swarmTrace) {
+      console.log('[swarm-trace] move FAILED', q.id);
     }
   }
 }
@@ -8185,16 +8276,37 @@ function replaceAllScan(needle, replacement) {
       eng.loadPage(idx);
       refreshModel();
     }
-    for (const para of [...state.paragraphs]) {
-      if (!para.editable) continue;
+    // SWARM: сверху вниз по месту. Каждая правка перечитывает модель страницы (см.
+    // commitWithCascade), поэтому следующий абзац ищем заново: самый верхний из тех, что
+    // ниже уже обработанного.
+    let below = Infinity;
+    for (;;) {
+      const para = state.paragraphs
+        .filter((q) => q.editable && q.box && q.box.top < below - 0.5)
+        .filter((q) => paraMatches(q, needle, opts).length)
+        .sort((a, b) => b.box.top - a.box.top)[0];
+      if (!para) break;
       const spans = paraMatches(para, needle, opts);
-      if (!spans.length) continue;
       const runs = runsWithReplacements(para, spans, replacement);
-      if (commitWithCascade(para, runs)) total += spans.length;
+      const u = commitWithCascade(para, runs);
+      if (u) total += spans.length;
+      below = u?.box?.top ?? para.box.top;
     }
   }
   state.find = null;
   state.dirty = total > 0;
+  if (window.__swarmTrace) {
+    const fmt = (ps) =>
+      ps
+        .filter((q) => q.editable)
+        .map(
+          (q) =>
+            `${q.id}:${q.box.top.toFixed(1)}/${(q.box.top - q.box.h).toFixed(1)}`
+        )
+        .join(' ');
+    console.log('[swarm-trace] state ', fmt(state.paragraphs));
+    console.log('[swarm-trace] engine', fmt(P().buildModel()));
+  }
   renderPage();
   updateChrome();
   return total;
