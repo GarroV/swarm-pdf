@@ -25,4 +25,6 @@ for p in "${PAGES[@]}"; do
     printf '%s\n  Content-Security-Policy: %s\n\n' "$path" "$CSP" >> "$out"
   done
 done
+# Просмотрщик PDF.js открывается внутри подписи отдельным документом и тоже получает файл.
+printf '%s\n  Content-Security-Policy: %s\n\n' "/pdfjs-viewer/*" "$CSP" >> "$out"
 echo "заголовки: $out (${#PAGES[@]} страниц)"
