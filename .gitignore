@@ -55,3 +55,4 @@ test
 bentopdf-pdfium-viewer/
 bentopdf-pymupdf-wasm/
 public/wasm/
+public/fonts/noto/

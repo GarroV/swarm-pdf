@@ -416,6 +416,10 @@ function closeEditor() {
 }
 let launching = false;
 let metricFontsReady: Promise<unknown> = Promise.resolve();
+// Дольше файл не ждёт запасные шрифты: зависшая сеть не должна запирать редактор. После предела
+// файл открывается, шрифты догружаются фоном (тогда правка в первые секунды снова может дать
+// рамку — но это лучше, чем редактор, который не открывается вовсе).
+const METRIC_FONTS_WAIT_MS = 10_000;
 
 function fitMobileWidth() {
   const mod = appModule;
@@ -629,7 +633,10 @@ async function launchEditor(file: File) {
     if (!engineOk) {
       throw new Error('WASM engine failed to initialize');
     }
-    await metricFontsReady;
+    await Promise.race([
+      metricFontsReady.catch((): undefined => undefined),
+      new Promise((r) => setTimeout(r, METRIC_FONTS_WAIT_MS)),
+    ]);
     await appModule.openFile(decrypted[0]);
     if (window.matchMedia('(max-width: 768px)').matches) fitMobileWidth();
   } catch (error) {

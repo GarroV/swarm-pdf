@@ -34,15 +34,29 @@ fetch "@bentopdf/gs-wasm@$GS_V" assets "$WASM/gs"
 fetch "@bentopdf/pymupdf-wasm@$PYMU_V" . "$WASM/pymupdf"
 echo "движки: cpdf $CPDF_V, gs $GS_V, pymupdf $PYMU_V → $WASM"
 
+# Запасные шрифты Noto (иероглифы, арабица, индийские письменности и т.д.) BentoPDF грузит с
+# rawcdn.githack.com — сторонний сервис видит, что открыт редактор и какой шрифт понадобился.
+# Кладём те же файлы (закреплённые коммиты googlefonts в font-mappings.ts) к себе в fonts/noto;
+# VITE_OCR_FONT_BASE_URL — штатная настройка BentoPDF (src/js/utils/font-loader.ts).
+NOTO=public/fonts/noto
+mkdir -p "$NOTO"
+grep -oE "https://[^'\"]*githack[^'\"]*" src/js/config/font-mappings.ts | sort -u | while read -r url; do
+  f="$NOTO/${url##*/}"
+  [[ -s "$f" ]] || curl -fsSL --retry 3 -o "$f" "$url" || { echo "не скачался шрифт: $url" >&2; exit 1; }
+done
+echo "шрифты Noto: $(ls "$NOTO" | wc -l | tr -d ' ') файлов → $NOTO"
+
 # Cloudflare Pages не принимает файлы больше 25 МиБ — проверяем до сборки, а не на выкладке.
-big=$(find "$WASM" -type f -size +25M)
+big=$(find "$WASM" "$NOTO" -type f -size +25M)
 [[ -z "$big" ]] || { echo "файлы больше 25 МиБ, Pages их не примет:" >&2; echo "$big" >&2; exit 1; }
 
 export SIMPLE_MODE=true
 export VITE_WASM_CPDF_URL=/wasm/cpdf/
 export VITE_WASM_GS_URL=/wasm/gs/
 export VITE_WASM_PYMUPDF_URL=/wasm/pymupdf/
+export VITE_OCR_FONT_BASE_URL=/fonts/noto
 npm run build
+swarm/gen-headers.sh
 
 # Сборка правит отслеживаемые файлы (блог, доку заголовков, partials) — откатываем.
 git checkout -- blog security-headers-docs.conf src/partials 2>/dev/null || true
